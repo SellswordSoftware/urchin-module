@@ -1,0 +1,8 @@
+file_format: "1"
+id: nice_view_sellsword
+name: nice!view_sellsword
+type: shield
+url: https://nicekeyboards.com/nice-view
+requires: [nice_view_header]
+features:
+  - display
