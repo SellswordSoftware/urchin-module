@@ -3,3 +3,11 @@
 
 config SHIELD_NICE_VIEW_SELLSWORD
     def_bool $(shields_list_contains,nice_view_sellsword)
+
+if SHIELD_NICE_VIEW_SELLSWORD
+
+config NICE_VIEW_WIDGET_PERIPHERAL_BOIDS
+    bool "Use boids animation instead of static peripheral art"
+    default n
+
+endif

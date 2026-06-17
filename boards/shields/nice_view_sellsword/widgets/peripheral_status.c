@@ -32,6 +32,143 @@ struct peripheral_status_state {
     bool connected;
 };
 
+static int16_t abs_i16(int16_t value) { return value < 0 ? -value : value; }
+
+static int16_t sign_i16(int16_t value) {
+    if (value > 0) {
+        return 1;
+    }
+    if (value < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int16_t clamp_velocity(int16_t value) {
+    if (value > 1) {
+        return 1;
+    }
+    if (value < -1) {
+        return -1;
+    }
+    return value;
+}
+
+static int16_t wrap_coordinate(int16_t value, int16_t max) {
+    if (value < 0) {
+        return max - 1;
+    }
+    if (value >= max) {
+        return 0;
+    }
+    return value;
+}
+
+static int16_t random_velocity(void) {
+    return (sys_rand32_get() % 3) - 1;
+}
+
+static void reset_stationary_boid(struct peripheral_boid *boid) {
+    if (boid->vx == 0 && boid->vy == 0) {
+        boid->vx = (sys_rand32_get() & 1) ? 1 : -1;
+    }
+}
+
+static void draw_boids(struct zmk_widget_status *widget) {
+    lv_obj_t *canvas = lv_obj_get_child(widget->obj, 1);
+
+    lv_draw_rect_dsc_t rect_black_dsc;
+    init_rect_dsc(&rect_black_dsc, LVGL_BACKGROUND);
+
+    lv_canvas_draw_rect(canvas, 0, 0, PERIPHERAL_ART_WIDTH, PERIPHERAL_ART_HEIGHT, &rect_black_dsc);
+
+    for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
+        lv_canvas_set_px_color(canvas, widget->boids[i].x, widget->boids[i].y, LVGL_FOREGROUND);
+    }
+}
+
+static void step_boids(struct zmk_widget_status *widget) {
+    for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
+        int neighbor_count = 0;
+        int avg_x = 0;
+        int avg_y = 0;
+        int avg_vx = 0;
+        int avg_vy = 0;
+        int separation_x = 0;
+        int separation_y = 0;
+
+        for (int j = 0; j < PERIPHERAL_BOID_COUNT; j++) {
+            if (i == j) {
+                continue;
+            }
+
+            int dx = widget->boids[j].x - widget->boids[i].x;
+            int dy = widget->boids[j].y - widget->boids[i].y;
+
+            if (abs_i16(dx) > 12 || abs_i16(dy) > 12) {
+                continue;
+            }
+
+            neighbor_count++;
+            avg_x += widget->boids[j].x;
+            avg_y += widget->boids[j].y;
+            avg_vx += widget->boids[j].vx;
+            avg_vy += widget->boids[j].vy;
+
+            if (abs_i16(dx) <= 2) {
+                separation_x -= dx;
+            }
+            if (abs_i16(dy) <= 2) {
+                separation_y -= dy;
+            }
+        }
+
+        if (neighbor_count > 0) {
+            avg_x /= neighbor_count;
+            avg_y /= neighbor_count;
+            avg_vx /= neighbor_count;
+            avg_vy /= neighbor_count;
+
+            widget->boids[i].vx =
+                clamp_velocity(widget->boids[i].vx + sign_i16(avg_x - widget->boids[i].x) +
+                               sign_i16(avg_vx - widget->boids[i].vx) + sign_i16(separation_x));
+            widget->boids[i].vy =
+                clamp_velocity(widget->boids[i].vy + sign_i16(avg_y - widget->boids[i].y) +
+                               sign_i16(avg_vy - widget->boids[i].vy) + sign_i16(separation_y));
+        } else if ((sys_rand32_get() % 4) == 0) {
+            widget->boids[i].vx = clamp_velocity(widget->boids[i].vx + random_velocity());
+            widget->boids[i].vy = clamp_velocity(widget->boids[i].vy + random_velocity());
+        }
+
+        reset_stationary_boid(&widget->boids[i]);
+        widget->boids[i].x =
+            wrap_coordinate(widget->boids[i].x + widget->boids[i].vx, PERIPHERAL_ART_WIDTH);
+        widget->boids[i].y =
+            wrap_coordinate(widget->boids[i].y + widget->boids[i].vy, PERIPHERAL_ART_HEIGHT);
+    }
+}
+
+static void boids_timer_cb(lv_timer_t *timer) {
+    struct zmk_widget_status *widget = lv_timer_get_user_data(timer);
+
+    if (widget == NULL) {
+        return;
+    }
+
+    step_boids(widget);
+    draw_boids(widget);
+}
+
+static void init_boids(struct zmk_widget_status *widget) {
+    for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
+        widget->boids[i].x = sys_rand32_get() % PERIPHERAL_ART_WIDTH;
+        widget->boids[i].y = sys_rand32_get() % PERIPHERAL_ART_HEIGHT;
+        widget->boids[i].vx = random_velocity();
+        widget->boids[i].vy = random_velocity();
+        reset_stationary_boid(&widget->boids[i]);
+    }
+}
+
 static void draw_top(lv_obj_t *widget, lv_color_t cbuf[], const struct status_state *state) {
     lv_obj_t *canvas = lv_obj_get_child(widget, 0);
 
@@ -114,10 +251,21 @@ int zmk_widget_status_init(struct zmk_widget_status *widget, lv_obj_t *parent) {
     lv_obj_align(top, LV_ALIGN_TOP_RIGHT, 0, 0);
     lv_canvas_set_buffer(top, widget->cbuf, CANVAS_SIZE, CANVAS_SIZE, LV_IMG_CF_TRUE_COLOR);
 
-    lv_obj_t *art = lv_img_create(widget->obj);
-    bool random = sys_rand32_get() & 1;
-    lv_img_set_src(art, random ? &balloon : &mountain);
-    lv_obj_align(art, LV_ALIGN_TOP_LEFT, 0, 0);
+    if (IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_BOIDS)) {
+        lv_obj_t *art = lv_canvas_create(widget->obj);
+        lv_obj_align(art, LV_ALIGN_TOP_LEFT, 0, 0);
+        lv_canvas_set_buffer(art, widget->art_cbuf, PERIPHERAL_ART_WIDTH, PERIPHERAL_ART_HEIGHT,
+                             LV_IMG_CF_TRUE_COLOR);
+        init_boids(widget);
+        draw_boids(widget);
+        widget->boids_timer = lv_timer_create(boids_timer_cb, 1000, widget);
+    } else {
+        lv_obj_t *art = lv_img_create(widget->obj);
+        bool random = sys_rand32_get() & 1;
+        lv_img_set_src(art, random ? &balloon : &mountain);
+        lv_obj_align(art, LV_ALIGN_TOP_LEFT, 0, 0);
+        widget->boids_timer = NULL;
+    }
 
     sys_slist_append(&widgets, &widget->node);
     widget_battery_status_init();

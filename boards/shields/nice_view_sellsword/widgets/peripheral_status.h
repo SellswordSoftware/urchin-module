@@ -11,10 +11,24 @@
 #include <zephyr/kernel.h>
 #include "util.h"
 
+#define PERIPHERAL_ART_WIDTH 140
+#define PERIPHERAL_ART_HEIGHT 68
+#define PERIPHERAL_BOID_COUNT 20
+
+struct peripheral_boid {
+    int16_t x;
+    int16_t y;
+    int8_t vx;
+    int8_t vy;
+};
+
 struct zmk_widget_status {
     sys_snode_t node;
     lv_obj_t *obj;
     lv_color_t cbuf[CANVAS_SIZE * CANVAS_SIZE];
+    lv_color_t art_cbuf[PERIPHERAL_ART_WIDTH * PERIPHERAL_ART_HEIGHT];
+    lv_timer_t *boids_timer;
+    struct peripheral_boid boids[PERIPHERAL_BOID_COUNT];
     struct status_state state;
 };
 
