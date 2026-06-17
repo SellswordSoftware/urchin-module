@@ -257,7 +257,7 @@ static bool init_boids_art(struct zmk_widget_status *widget) {
     lv_obj_set_scrollbar_mode(widget->art_obj, LV_SCROLLBAR_MODE_OFF);
 
     for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
-        widget->boid_dots[i] = lv_obj_create(widget->art_obj);
+        widget->boid_dots[i] = lv_obj_create(widget->obj);
         if (widget->boid_dots[i] == NULL) {
             LOG_ERR("Failed to create boid dot %d", i);
             lv_obj_del(widget->art_obj);
@@ -266,6 +266,7 @@ static bool init_boids_art(struct zmk_widget_status *widget) {
         }
 
         lv_obj_set_size(widget->boid_dots[i], 1, 1);
+        lv_obj_clear_flag(widget->boid_dots[i], LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_radius(widget->boid_dots[i], 0, LV_PART_MAIN);
         lv_obj_set_style_border_width(widget->boid_dots[i], 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(widget->boid_dots[i], 0, LV_PART_MAIN);
