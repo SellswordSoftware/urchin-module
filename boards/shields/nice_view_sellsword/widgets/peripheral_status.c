@@ -22,6 +22,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/ble.h>
 
 #include "peripheral_status.h"
+#if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_FAKE_CODE)
+#include "peripheral_fake_code.h"
+#endif
 #if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_BOIDS)
 #include "peripheral_boids.h"
 #endif
@@ -130,7 +133,11 @@ int zmk_widget_status_init(struct zmk_widget_status *widget, lv_obj_t *parent) {
     lv_obj_align(top, LV_ALIGN_TOP_RIGHT, 0, 0);
     lv_canvas_set_buffer(top, widget->cbuf, CANVAS_SIZE, CANVAS_SIZE, LV_IMG_CF_TRUE_COLOR);
 
-#if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_BOIDS)
+#if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_FAKE_CODE)
+    if (!zmk_widget_peripheral_fake_code_init(&widget->fake_code, widget->obj)) {
+        init_static_art(widget);
+    }
+#elif IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_BOIDS)
     if (!zmk_widget_peripheral_boids_init(&widget->boids, widget->obj)) {
         init_static_art(widget);
     }
