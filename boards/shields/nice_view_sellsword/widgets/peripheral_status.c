@@ -75,15 +75,11 @@ static void reset_stationary_boid(struct peripheral_boid *boid) {
 }
 
 static void draw_boids(struct zmk_widget_status *widget) {
-    lv_obj_t *canvas = lv_obj_get_child(widget->obj, 1);
-
-    lv_draw_rect_dsc_t rect_black_dsc;
-    init_rect_dsc(&rect_black_dsc, LVGL_BACKGROUND);
-
-    lv_canvas_draw_rect(canvas, 0, 0, PERIPHERAL_ART_WIDTH, PERIPHERAL_ART_HEIGHT, &rect_black_dsc);
+    lv_obj_set_style_bg_color(widget->art_obj, LVGL_BACKGROUND, LV_PART_MAIN);
 
     for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
-        lv_canvas_set_px_color(canvas, widget->boids[i].x, widget->boids[i].y, LVGL_FOREGROUND);
+        lv_obj_set_pos(widget->boid_dots[i], widget->boids[i].x, widget->boids[i].y);
+        lv_obj_set_style_bg_color(widget->boid_dots[i], LVGL_FOREGROUND, LV_PART_MAIN);
     }
 }
 
@@ -252,10 +248,24 @@ int zmk_widget_status_init(struct zmk_widget_status *widget, lv_obj_t *parent) {
     lv_canvas_set_buffer(top, widget->cbuf, CANVAS_SIZE, CANVAS_SIZE, LV_IMG_CF_TRUE_COLOR);
 
     if (IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_BOIDS)) {
-        lv_obj_t *art = lv_canvas_create(widget->obj);
-        lv_obj_align(art, LV_ALIGN_TOP_LEFT, 0, 0);
-        lv_canvas_set_buffer(art, widget->art_cbuf, PERIPHERAL_ART_WIDTH, PERIPHERAL_ART_HEIGHT,
-                             LV_IMG_CF_TRUE_COLOR);
+        widget->art_obj = lv_obj_create(widget->obj);
+        lv_obj_set_size(widget->art_obj, PERIPHERAL_ART_WIDTH, PERIPHERAL_ART_HEIGHT);
+        lv_obj_align(widget->art_obj, LV_ALIGN_TOP_LEFT, 0, 0);
+        lv_obj_set_style_radius(widget->art_obj, 0, LV_PART_MAIN);
+        lv_obj_set_style_border_width(widget->art_obj, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(widget->art_obj, 0, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(widget->art_obj, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_scrollbar_mode(widget->art_obj, LV_SCROLLBAR_MODE_OFF);
+
+        for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
+            widget->boid_dots[i] = lv_obj_create(widget->art_obj);
+            lv_obj_set_size(widget->boid_dots[i], 1, 1);
+            lv_obj_set_style_radius(widget->boid_dots[i], 0, LV_PART_MAIN);
+            lv_obj_set_style_border_width(widget->boid_dots[i], 0, LV_PART_MAIN);
+            lv_obj_set_style_pad_all(widget->boid_dots[i], 0, LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(widget->boid_dots[i], LV_OPA_COVER, LV_PART_MAIN);
+        }
+
         init_boids(widget);
         draw_boids(widget);
         widget->boids_timer = lv_timer_create(boids_timer_cb, 1000, widget);
@@ -264,6 +274,7 @@ int zmk_widget_status_init(struct zmk_widget_status *widget, lv_obj_t *parent) {
         bool random = sys_rand32_get() & 1;
         lv_img_set_src(art, random ? &balloon : &mountain);
         lv_obj_align(art, LV_ALIGN_TOP_LEFT, 0, 0);
+        widget->art_obj = art;
         widget->boids_timer = NULL;
     }
 
