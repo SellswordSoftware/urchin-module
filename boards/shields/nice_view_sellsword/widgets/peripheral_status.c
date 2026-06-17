@@ -46,11 +46,11 @@ static int16_t sign_i16(int16_t value) {
 }
 
 static int16_t clamp_velocity(int16_t value) {
-    if (value > 1) {
-        return 1;
+    if (value > PERIPHERAL_BOID_MAX_SPEED) {
+        return PERIPHERAL_BOID_MAX_SPEED;
     }
-    if (value < -1) {
-        return -1;
+    if (value < -PERIPHERAL_BOID_MAX_SPEED) {
+        return -PERIPHERAL_BOID_MAX_SPEED;
     }
     return value;
 }
@@ -70,12 +70,13 @@ static int16_t random_velocity(void) {
 }
 
 static int16_t random_velocity_strong(void) {
-    return (sys_rand32_get() % 5) - 2;
+    return (sys_rand32_get() % (PERIPHERAL_BOID_MAX_SPEED * 2 + 1)) - PERIPHERAL_BOID_MAX_SPEED;
 }
 
 static void reset_stationary_boid(struct peripheral_boid *boid) {
     if (boid->vx == 0 && boid->vy == 0) {
         boid->vx = (sys_rand32_get() & 1) ? 1 : -1;
+        boid->vy = ((sys_rand32_get() >> 1) & 1) ? 1 : -1;
     }
 }
 
@@ -87,29 +88,32 @@ static void perturb_boids(struct zmk_widget_status *widget, uint32_t position) {
         int16_t dx = widget->boids[i].x - impulse_x;
         int16_t dy = widget->boids[i].y - impulse_y;
 
-        if (abs_i16(dx) <= 12 && abs_i16(dy) <= 12) {
+        if (abs_i16(dx) <= 20 && abs_i16(dy) <= 20) {
             widget->boids[i].vx =
-                clamp_velocity(widget->boids[i].vx + sign_i16(dx) + random_velocity());
+                clamp_velocity(widget->boids[i].vx + sign_i16(dx) * 2 + random_velocity_strong());
             widget->boids[i].vy =
-                clamp_velocity(widget->boids[i].vy + sign_i16(dy) + random_velocity());
+                clamp_velocity(widget->boids[i].vy + sign_i16(dy) * 2 + random_velocity_strong());
         }
     }
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 6; i++) {
         int idx = (position + (uint32_t)(i * 7)) % PERIPHERAL_BOID_COUNT;
-        widget->boids[idx].vx = clamp_velocity(random_velocity_strong());
-        widget->boids[idx].vy = clamp_velocity(random_velocity_strong());
+        widget->boids[idx].vx =
+            clamp_velocity(sign_i16(widget->boids[idx].x - impulse_x) * PERIPHERAL_BOID_MAX_SPEED);
+        widget->boids[idx].vy =
+            clamp_velocity(sign_i16(widget->boids[idx].y - impulse_y) * PERIPHERAL_BOID_MAX_SPEED);
     }
 
     draw_boids(widget);
 }
 
 static void draw_boids(struct zmk_widget_status *widget) {
-    lv_obj_set_style_bg_color(widget->art_obj, LVGL_BACKGROUND, LV_PART_MAIN);
-
     for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
-        lv_obj_set_pos(widget->boid_dots[i], widget->boids[i].x, widget->boids[i].y);
-        lv_obj_set_style_bg_color(widget->boid_dots[i], LVGL_FOREGROUND, LV_PART_MAIN);
+        if (widget->boids[i].x != widget->boid_prev_x[i] || widget->boids[i].y != widget->boid_prev_y[i]) {
+            lv_obj_set_pos(widget->boid_dots[i], widget->boids[i].x, widget->boids[i].y);
+            widget->boid_prev_x[i] = widget->boids[i].x;
+            widget->boid_prev_y[i] = widget->boids[i].y;
+        }
     }
 }
 
@@ -122,6 +126,12 @@ static void step_boids(struct zmk_widget_status *widget) {
         int avg_vy = 0;
         int separation_x = 0;
         int separation_y = 0;
+        int16_t cohesion_x = 0;
+        int16_t cohesion_y = 0;
+        int16_t alignment_x = 0;
+        int16_t alignment_y = 0;
+        int16_t repel_x = 0;
+        int16_t repel_y = 0;
 
         for (int j = 0; j < PERIPHERAL_BOID_COUNT; j++) {
             if (i == j) {
@@ -131,7 +141,7 @@ static void step_boids(struct zmk_widget_status *widget) {
             int dx = widget->boids[j].x - widget->boids[i].x;
             int dy = widget->boids[j].y - widget->boids[i].y;
 
-            if (abs_i16(dx) > 12 || abs_i16(dy) > 12) {
+            if (abs_i16(dx) > 10 || abs_i16(dy) > 10) {
                 continue;
             }
 
@@ -141,10 +151,10 @@ static void step_boids(struct zmk_widget_status *widget) {
             avg_vx += widget->boids[j].vx;
             avg_vy += widget->boids[j].vy;
 
-            if (abs_i16(dx) <= 2) {
+            if (abs_i16(dx) <= 4) {
                 separation_x -= dx;
             }
-            if (abs_i16(dy) <= 2) {
+            if (abs_i16(dy) <= 4) {
                 separation_y -= dy;
             }
         }
@@ -155,15 +165,20 @@ static void step_boids(struct zmk_widget_status *widget) {
             avg_vx /= neighbor_count;
             avg_vy /= neighbor_count;
 
+            cohesion_x = abs_i16(avg_x - widget->boids[i].x) > 6 ? sign_i16(avg_x - widget->boids[i].x) : 0;
+            cohesion_y = abs_i16(avg_y - widget->boids[i].y) > 6 ? sign_i16(avg_y - widget->boids[i].y) : 0;
+            alignment_x = sign_i16(avg_vx - widget->boids[i].vx);
+            alignment_y = sign_i16(avg_vy - widget->boids[i].vy);
+            repel_x = sign_i16(separation_x) * 2;
+            repel_y = sign_i16(separation_y) * 2;
+
             widget->boids[i].vx =
-                clamp_velocity(widget->boids[i].vx + sign_i16(avg_x - widget->boids[i].x) +
-                               sign_i16(avg_vx - widget->boids[i].vx) + sign_i16(separation_x));
+                clamp_velocity(widget->boids[i].vx + cohesion_x + alignment_x + repel_x);
             widget->boids[i].vy =
-                clamp_velocity(widget->boids[i].vy + sign_i16(avg_y - widget->boids[i].y) +
-                               sign_i16(avg_vy - widget->boids[i].vy) + sign_i16(separation_y));
-        } else if ((sys_rand32_get() % 4) == 0) {
-            widget->boids[i].vx = clamp_velocity(widget->boids[i].vx + random_velocity());
-            widget->boids[i].vy = clamp_velocity(widget->boids[i].vy + random_velocity());
+                clamp_velocity(widget->boids[i].vy + cohesion_y + alignment_y + repel_y);
+        } else if ((sys_rand32_get() % 3) == 0) {
+            widget->boids[i].vx = clamp_velocity(widget->boids[i].vx + random_velocity_strong());
+            widget->boids[i].vy = clamp_velocity(widget->boids[i].vy + random_velocity_strong());
         }
 
         reset_stationary_boid(&widget->boids[i]);
@@ -189,8 +204,10 @@ static void init_boids(struct zmk_widget_status *widget) {
     for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
         widget->boids[i].x = sys_rand32_get() % PERIPHERAL_ART_WIDTH;
         widget->boids[i].y = sys_rand32_get() % PERIPHERAL_ART_HEIGHT;
-        widget->boids[i].vx = random_velocity();
-        widget->boids[i].vy = random_velocity();
+        widget->boids[i].vx = random_velocity_strong();
+        widget->boids[i].vy = random_velocity_strong();
+        widget->boid_prev_x[i] = -1;
+        widget->boid_prev_y[i] = -1;
         reset_stationary_boid(&widget->boids[i]);
     }
 }
@@ -224,6 +241,7 @@ static bool init_boids_art(struct zmk_widget_status *widget) {
     lv_obj_set_style_border_width(widget->art_obj, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(widget->art_obj, 0, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(widget->art_obj, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(widget->art_obj, LVGL_BACKGROUND, LV_PART_MAIN);
     lv_obj_set_scrollbar_mode(widget->art_obj, LV_SCROLLBAR_MODE_OFF);
 
     for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
@@ -240,11 +258,12 @@ static bool init_boids_art(struct zmk_widget_status *widget) {
         lv_obj_set_style_border_width(widget->boid_dots[i], 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(widget->boid_dots[i], 0, LV_PART_MAIN);
         lv_obj_set_style_bg_opa(widget->boid_dots[i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(widget->boid_dots[i], LVGL_FOREGROUND, LV_PART_MAIN);
     }
 
     init_boids(widget);
     draw_boids(widget);
-    widget->boids_timer = lv_timer_create(boids_timer_cb, 400, widget);
+    widget->boids_timer = lv_timer_create(boids_timer_cb, 250, widget);
 
     if (widget->boids_timer == NULL) {
         LOG_ERR("Failed to create boids timer");
