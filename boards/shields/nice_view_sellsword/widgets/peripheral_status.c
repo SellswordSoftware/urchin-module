@@ -7,6 +7,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/random/random.h>
+#include <string.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -34,6 +35,9 @@ struct peripheral_status_state {
 };
 
 static void draw_boids(struct zmk_widget_status *widget);
+static void init_boids_bitmap(struct zmk_widget_status *widget);
+static void clear_boids_bitmap(struct zmk_widget_status *widget);
+static void set_boid_pixel(struct zmk_widget_status *widget, int16_t x, int16_t y);
 
 static int16_t abs_i16(int16_t value) { return value < 0 ? -value : value; }
 
@@ -110,13 +114,13 @@ static void perturb_boids(struct zmk_widget_status *widget, uint32_t position) {
 }
 
 static void draw_boids(struct zmk_widget_status *widget) {
+    clear_boids_bitmap(widget);
+
     for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
-        if (widget->boids[i].x != widget->boid_prev_x[i] || widget->boids[i].y != widget->boid_prev_y[i]) {
-            lv_obj_set_pos(widget->boid_dots[i], widget->boids[i].x, widget->boids[i].y);
-            widget->boid_prev_x[i] = widget->boids[i].x;
-            widget->boid_prev_y[i] = widget->boids[i].y;
-        }
+        set_boid_pixel(widget, widget->boids[i].x, widget->boids[i].y);
     }
+
+    lv_obj_invalidate(widget->art_obj);
 }
 
 static void step_boids(struct zmk_widget_status *widget) {
@@ -218,10 +222,52 @@ static void init_boids(struct zmk_widget_status *widget) {
         widget->boids[i].y = y_margin + (row * y_span) / (rows - 1);
         widget->boids[i].vx = ((i + 1) & 1) ? 1 : -1;
         widget->boids[i].vy = ((i / 2) & 1) ? 1 : -1;
-        widget->boid_prev_x[i] = -1;
-        widget->boid_prev_y[i] = -1;
         reset_stationary_boid(&widget->boids[i]);
     }
+}
+
+static void init_boids_bitmap(struct zmk_widget_status *widget) {
+    if (IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_INVERTED)) {
+        widget->art_buf[0] = 0xff;
+        widget->art_buf[1] = 0xff;
+        widget->art_buf[2] = 0xff;
+        widget->art_buf[3] = 0xff;
+        widget->art_buf[4] = 0x00;
+        widget->art_buf[5] = 0x00;
+        widget->art_buf[6] = 0x00;
+        widget->art_buf[7] = 0xff;
+    } else {
+        widget->art_buf[0] = 0x00;
+        widget->art_buf[1] = 0x00;
+        widget->art_buf[2] = 0x00;
+        widget->art_buf[3] = 0xff;
+        widget->art_buf[4] = 0xff;
+        widget->art_buf[5] = 0xff;
+        widget->art_buf[6] = 0xff;
+        widget->art_buf[7] = 0xff;
+    }
+
+    widget->boids_img.header.cf = LV_IMG_CF_INDEXED_1BIT;
+    widget->boids_img.header.always_zero = 0;
+    widget->boids_img.header.reserved = 0;
+    widget->boids_img.header.w = PERIPHERAL_ART_WIDTH;
+    widget->boids_img.header.h = PERIPHERAL_ART_HEIGHT;
+    widget->boids_img.data_size = sizeof(widget->art_buf);
+    widget->boids_img.data = widget->art_buf;
+
+    clear_boids_bitmap(widget);
+}
+
+static void clear_boids_bitmap(struct zmk_widget_status *widget) {
+    memset(widget->art_buf + PERIPHERAL_ART_PALETTE_BYTES, 0xff, PERIPHERAL_ART_BITMAP_BYTES);
+}
+
+static void set_boid_pixel(struct zmk_widget_status *widget, int16_t x, int16_t y) {
+    size_t bit_index = (size_t)y * PERIPHERAL_ART_WIDTH + (size_t)x;
+    size_t byte_index = PERIPHERAL_ART_PALETTE_BYTES + (bit_index / 8U);
+    uint8_t mask = 1U << (7U - (bit_index % 8U));
+
+    widget->art_buf[byte_index] &= (uint8_t)~mask;
 }
 
 static void init_static_art(struct zmk_widget_status *widget) {
@@ -241,39 +287,16 @@ static void init_static_art(struct zmk_widget_status *widget) {
 }
 
 static bool init_boids_art(struct zmk_widget_status *widget) {
-    widget->art_obj = lv_obj_create(widget->obj);
+    widget->art_obj = lv_img_create(widget->obj);
     if (widget->art_obj == NULL) {
-        LOG_ERR("Failed to create boids art container");
+        LOG_ERR("Failed to create boids art image");
         return false;
     }
 
-    lv_obj_set_size(widget->art_obj, PERIPHERAL_ART_WIDTH, PERIPHERAL_ART_HEIGHT);
     lv_obj_align(widget->art_obj, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_style_radius(widget->art_obj, 0, LV_PART_MAIN);
-    lv_obj_set_style_border_width(widget->art_obj, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(widget->art_obj, 0, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(widget->art_obj, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(widget->art_obj, LVGL_BACKGROUND, LV_PART_MAIN);
-    lv_obj_set_scrollbar_mode(widget->art_obj, LV_SCROLLBAR_MODE_OFF);
 
-    for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
-        widget->boid_dots[i] = lv_obj_create(widget->obj);
-        if (widget->boid_dots[i] == NULL) {
-            LOG_ERR("Failed to create boid dot %d", i);
-            lv_obj_del(widget->art_obj);
-            widget->art_obj = NULL;
-            return false;
-        }
-
-        lv_obj_set_size(widget->boid_dots[i], 1, 1);
-        lv_obj_clear_flag(widget->boid_dots[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_style_radius(widget->boid_dots[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_border_width(widget->boid_dots[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(widget->boid_dots[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(widget->boid_dots[i], LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_bg_color(widget->boid_dots[i], LVGL_FOREGROUND, LV_PART_MAIN);
-    }
-
+    init_boids_bitmap(widget);
+    lv_img_set_src(widget->art_obj, &widget->boids_img);
     init_boids(widget);
     draw_boids(widget);
     widget->boids_timer = lv_timer_create(boids_timer_cb, 250, widget);
