@@ -20,30 +20,25 @@
     (PERIPHERAL_GRAPH_PALETTE_BYTES + PERIPHERAL_GRAPH_BITMAP_BYTES)
 
 struct graph_params {
-    uint16_t phase_x1;
-    uint16_t phase_x2;
-    uint16_t phase_x3;
-    uint16_t phase_y1;
-    uint16_t phase_y2;
-    uint16_t phase_y3;
-    uint16_t inc_x1;
-    uint16_t inc_x2;
-    uint16_t inc_x3;
-    uint16_t inc_y1;
-    uint16_t inc_y2;
-    uint16_t inc_y3;
+    uint8_t ax;
+    uint8_t bx;
+    uint8_t ay;
+    uint8_t by;
+    uint8_t phase_x1;
+    uint8_t phase_x2;
+    uint8_t phase_y1;
+    uint8_t phase_y2;
     uint8_t amp_x1;
     uint8_t amp_x2;
-    uint8_t amp_x3;
     uint8_t amp_y1;
     uint8_t amp_y2;
-    uint8_t amp_y3;
     uint8_t steps_per_keypress;
 };
 
 struct zmk_widget_peripheral_graph {
     lv_obj_t *obj;
     uint32_t rng;
+    uint16_t t;
     uint16_t steps_drawn;
     uint16_t max_steps;
     uint16_t window_steps;
