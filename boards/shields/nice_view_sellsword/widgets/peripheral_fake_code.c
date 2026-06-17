@@ -41,8 +41,8 @@ static bool get_display_pixel(int16_t x, int16_t y, int16_t *display_x, int16_t 
         return false;
     }
 
-    *display_x = y;
-    *display_y = PERIPHERAL_FAKE_CODE_LOGICAL_WIDTH - 1 - x;
+    *display_x = PERIPHERAL_FAKE_CODE_LOGICAL_HEIGHT - 1 - y;
+    *display_y = x;
 
     return true;
 }
