@@ -203,11 +203,21 @@ static void boids_timer_cb(lv_timer_t *timer) {
 }
 
 static void init_boids(struct zmk_widget_status *widget) {
+    const int columns = 5;
+    const int rows = 4;
+    const int x_margin = 8;
+    const int y_margin = 6;
+    const int x_span = PERIPHERAL_ART_WIDTH - x_margin * 2;
+    const int y_span = PERIPHERAL_ART_HEIGHT - y_margin * 2;
+
     for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
-        widget->boids[i].x = sys_rand32_get() % PERIPHERAL_ART_WIDTH;
-        widget->boids[i].y = sys_rand32_get() % PERIPHERAL_ART_HEIGHT;
-        widget->boids[i].vx = random_velocity_strong();
-        widget->boids[i].vy = random_velocity_strong();
+        int col = i % columns;
+        int row = i / columns;
+
+        widget->boids[i].x = x_margin + (col * x_span) / (columns - 1);
+        widget->boids[i].y = y_margin + (row * y_span) / (rows - 1);
+        widget->boids[i].vx = ((i + 1) & 1) ? 1 : -1;
+        widget->boids[i].vy = ((i / 2) & 1) ? 1 : -1;
         widget->boid_prev_x[i] = -1;
         widget->boid_prev_y[i] = -1;
         reset_stationary_boid(&widget->boids[i]);
