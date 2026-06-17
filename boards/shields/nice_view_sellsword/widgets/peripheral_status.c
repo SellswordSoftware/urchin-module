@@ -33,6 +33,8 @@ struct peripheral_status_state {
     bool connected;
 };
 
+static void draw_boids(struct zmk_widget_status *widget);
+
 static int16_t abs_i16(int16_t value) { return value < 0 ? -value : value; }
 
 static int16_t sign_i16(int16_t value) {
