@@ -141,12 +141,9 @@ static int16_t graph_x(const struct zmk_widget_peripheral_graph *graph) {
     const struct graph_params *params = &graph->params;
     int16_t x = PERIPHERAL_GRAPH_WIDTH / 2;
 
-    x += (sin_lut[(uint8_t)(params->ax * graph->t + params->phase_x1)] *
-          params->amp_x1) /
-         127;
-    x += (sin_lut[(uint8_t)(params->bx * graph->t + params->phase_x2)] *
-          params->amp_x2) /
-         127;
+    x += (sin_lut[(uint8_t)(params->phase_x1 >> 8)] * params->amp_x1) / 127;
+    x += (sin_lut[(uint8_t)(params->phase_x2 >> 8)] * params->amp_x2) / 127;
+    x += (sin_lut[(uint8_t)(params->phase_x3 >> 8)] * params->amp_x3) / 127;
 
     return x;
 }
@@ -155,63 +152,91 @@ static int16_t graph_y(const struct zmk_widget_peripheral_graph *graph) {
     const struct graph_params *params = &graph->params;
     int16_t y = PERIPHERAL_GRAPH_HEIGHT / 2;
 
-    y += (sin_lut[(uint8_t)(params->ay * graph->t + params->phase_y1)] *
-          params->amp_y1) /
-         127;
-    y += (sin_lut[(uint8_t)(params->by * graph->t + params->phase_y2)] *
-          params->amp_y2) /
-         127;
+    y += (sin_lut[(uint8_t)(params->phase_y1 >> 8)] * params->amp_y1) / 127;
+    y += (sin_lut[(uint8_t)(params->phase_y2 >> 8)] * params->amp_y2) / 127;
+    y += (sin_lut[(uint8_t)(params->phase_y3 >> 8)] * params->amp_y3) / 127;
 
     return y;
 }
 
-static uint8_t frequency_choice(struct zmk_widget_peripheral_graph *graph) {
-    static const uint8_t choices[] = {2, 3, 4, 5, 7};
+static uint16_t
+phase_increment_choice(struct zmk_widget_peripheral_graph *graph,
+                       bool primary) {
+    static const uint16_t primary_choices[] = {529,  701,  947, 1213,
+                                               1489, 1871, 2333};
+    static const uint16_t secondary_choices[] = {173, 251, 337, 421,
+                                                 587, 653, 809};
+    const uint16_t *choices = primary ? primary_choices : secondary_choices;
+    size_t choice_count =
+        primary ? (sizeof(primary_choices) / sizeof(primary_choices[0]))
+                : (sizeof(secondary_choices) / sizeof(secondary_choices[0]));
 
-    return choices[next_rand(graph) % (sizeof(choices) / sizeof(choices[0]))];
+    return choices[next_rand(graph) % choice_count];
 }
 
 static void generate_params(struct zmk_widget_peripheral_graph *graph) {
     struct graph_params *params = &graph->params;
 
-    params->ax = frequency_choice(graph);
-    params->ay = frequency_choice(graph);
-    if (params->ay == params->ax) {
-        params->ay = params->ay == 2 ? 3 : 2;
+    params->phase_x1 = (uint16_t)next_rand(graph);
+    params->phase_x2 = (uint16_t)next_rand(graph);
+    params->phase_x3 = (uint16_t)next_rand(graph);
+    params->phase_y1 = (uint16_t)next_rand(graph);
+    params->phase_y2 = (uint16_t)next_rand(graph);
+    params->phase_y3 = (uint16_t)next_rand(graph);
+
+    params->inc_x1 = phase_increment_choice(graph, true);
+    params->inc_y1 = phase_increment_choice(graph, true);
+    if (params->inc_y1 == params->inc_x1) {
+        params->inc_y1 += 2;
     }
 
-    params->bx = frequency_choice(graph);
-    params->by = frequency_choice(graph);
-    if (params->by == params->bx) {
-        params->by = params->by == 2 ? 3 : 2;
+    params->inc_x2 = phase_increment_choice(graph, true);
+    params->inc_y2 = phase_increment_choice(graph, true);
+    if (params->inc_y2 == params->inc_x2) {
+        params->inc_y2 += 2;
     }
 
-    params->phase_x1 = (uint8_t)next_rand(graph);
-    params->phase_x2 = (uint8_t)next_rand(graph);
-    params->phase_y1 = (uint8_t)next_rand(graph);
-    params->phase_y2 = (uint8_t)next_rand(graph);
-
-    params->amp_x1 = rand_range(graph, 38, 58);
-    params->amp_x2 = rand_range(graph, 6, 18);
-    if (params->amp_x1 + params->amp_x2 > 66) {
-        params->amp_x2 = 66 - params->amp_x1;
+    params->inc_x3 = phase_increment_choice(graph, false);
+    params->inc_y3 = phase_increment_choice(graph, false);
+    if (params->inc_y3 == params->inc_x3) {
+        params->inc_y3 += 2;
     }
 
-    params->amp_y1 = rand_range(graph, 18, 28);
-    params->amp_y2 = rand_range(graph, 4, 10);
-    if (params->amp_y1 + params->amp_y2 > 32) {
-        params->amp_y2 = 32 - params->amp_y1;
+    params->amp_x1 = rand_range(graph, 30, 46);
+    uint8_t max_amp_x2 = 62 - params->amp_x1;
+    if (max_amp_x2 > 24) {
+        max_amp_x2 = 24;
     }
+    params->amp_x2 = rand_range(graph, 12, max_amp_x2);
+    params->amp_x3 = rand_range(graph, 3, 66 - params->amp_x1 - params->amp_x2);
 
-    params->steps_per_keypress = rand_range(graph, 4, 8);
-    graph->max_steps = rand_range_u16(graph, 384, 896);
+    params->amp_y1 = rand_range(graph, 16, 24);
+    uint8_t max_amp_y2 = 30 - params->amp_y1;
+    if (max_amp_y2 > 12) {
+        max_amp_y2 = 12;
+    }
+    params->amp_y2 = rand_range(graph, 6, max_amp_y2);
+    params->amp_y3 = rand_range(graph, 2, 32 - params->amp_y1 - params->amp_y2);
+
+    params->steps_per_keypress = rand_range(graph, 3, 6);
+    graph->max_steps = rand_range_u16(graph, 1536, 4096);
+}
+
+static void step_phases(struct zmk_widget_peripheral_graph *graph) {
+    struct graph_params *params = &graph->params;
+
+    params->phase_x1 += params->inc_x1;
+    params->phase_x2 += params->inc_x2;
+    params->phase_x3 += params->inc_x3;
+    params->phase_y1 += params->inc_y1;
+    params->phase_y2 += params->inc_y2;
+    params->phase_y3 += params->inc_y3;
 }
 
 static void reset_graph(struct zmk_widget_peripheral_graph *graph) {
     clear_bitmap(graph);
     generate_params(graph);
 
-    graph->t = 0;
     graph->steps_drawn = 0;
     graph->window_steps = 0;
     graph->window_new_pixels = 0;
@@ -231,7 +256,7 @@ static void advance_graph(struct zmk_widget_peripheral_graph *graph,
         position + 0x9e3779b9U + (graph->rng << 6) + (graph->rng >> 2);
 
     for (uint8_t i = 0; i < steps; i++) {
-        graph->t++;
+        step_phases(graph);
         int16_t x = graph_x(graph);
         int16_t y = graph_y(graph);
 
