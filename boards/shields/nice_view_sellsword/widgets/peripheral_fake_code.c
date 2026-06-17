@@ -79,6 +79,22 @@ static void clear_pixel(struct zmk_widget_peripheral_fake_code *fake_code, int16
     fake_code->art_buf[byte_index] |= mask;
 }
 
+static bool get_pixel(struct zmk_widget_peripheral_fake_code *fake_code, int16_t x, int16_t y) {
+    int16_t display_x;
+    int16_t display_y;
+
+    if (!get_display_pixel(x, y, &display_x, &display_y)) {
+        return false;
+    }
+
+    size_t byte_index = PERIPHERAL_FAKE_CODE_PALETTE_BYTES +
+                        (size_t)display_y * PERIPHERAL_FAKE_CODE_STRIDE_BYTES +
+                        ((size_t)display_x / 8U);
+    uint8_t mask = 1U << (7U - ((size_t)display_x % 8U));
+
+    return (fake_code->art_buf[byte_index] & mask) == 0;
+}
+
 static void clear_rect(struct zmk_widget_peripheral_fake_code *fake_code, uint8_t x, uint8_t y,
                        uint8_t width, uint8_t height) {
     for (uint8_t yy = y; yy < y + height && yy < PERIPHERAL_FAKE_CODE_LOGICAL_HEIGHT; yy++) {
@@ -103,8 +119,19 @@ static void draw_vline(struct zmk_widget_peripheral_fake_code *fake_code, uint8_
 }
 
 static void scroll_up(struct zmk_widget_peripheral_fake_code *fake_code) {
-    clear_bitmap(fake_code);
-    fake_code->cursor_y = 0;
+    for (uint8_t y = 0; y < PERIPHERAL_FAKE_CODE_LOGICAL_HEIGHT - FAKE_CODE_LINE_HEIGHT; y++) {
+        for (uint8_t x = 0; x < PERIPHERAL_FAKE_CODE_LOGICAL_WIDTH; x++) {
+            if (get_pixel(fake_code, x, y + FAKE_CODE_LINE_HEIGHT)) {
+                set_pixel(fake_code, x, y);
+            } else {
+                clear_pixel(fake_code, x, y);
+            }
+        }
+    }
+
+    clear_rect(fake_code, 0, PERIPHERAL_FAKE_CODE_LOGICAL_HEIGHT - FAKE_CODE_LINE_HEIGHT,
+               PERIPHERAL_FAKE_CODE_LOGICAL_WIDTH, FAKE_CODE_LINE_HEIGHT);
+    fake_code->cursor_y = PERIPHERAL_FAKE_CODE_LOGICAL_HEIGHT - FAKE_CODE_LINE_HEIGHT;
 }
 
 static void newline(struct zmk_widget_peripheral_fake_code *fake_code) {
