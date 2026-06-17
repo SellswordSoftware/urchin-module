@@ -79,6 +79,12 @@ static int16_t random_velocity_strong(void) {
     return (sys_rand32_get() % (PERIPHERAL_BOID_MAX_SPEED * 2 + 1)) - PERIPHERAL_BOID_MAX_SPEED;
 }
 
+static int16_t center_pull(int16_t value, int16_t center, int16_t deadzone) {
+    int16_t delta = center - value;
+
+    return abs_i16(delta) > deadzone ? sign_i16(delta) : 0;
+}
+
 static void reset_stationary_boid(struct peripheral_boid *boid) {
     if (boid->vx == 0 && boid->vy == 0) {
         boid->vx = (sys_rand32_get() & 1) ? 1 : -1;
@@ -94,15 +100,15 @@ static void perturb_boids(struct zmk_widget_status *widget, uint32_t position) {
         int16_t dx = widget->boids[i].x - impulse_x;
         int16_t dy = widget->boids[i].y - impulse_y;
 
-        if (abs_i16(dx) <= 20 && abs_i16(dy) <= 20) {
+        if (abs_i16(dx) <= 18 && abs_i16(dy) <= 18) {
             widget->boids[i].vx =
-                clamp_velocity(widget->boids[i].vx + sign_i16(dx) * 2 + random_velocity_strong());
+                clamp_velocity(widget->boids[i].vx + sign_i16(dx) + random_velocity());
             widget->boids[i].vy =
-                clamp_velocity(widget->boids[i].vy + sign_i16(dy) * 2 + random_velocity_strong());
+                clamp_velocity(widget->boids[i].vy + sign_i16(dy) + random_velocity());
         }
     }
 
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 4; i++) {
         int idx = (position + (uint32_t)(i * 7)) % PERIPHERAL_BOID_COUNT;
         widget->boids[idx].vx =
             clamp_velocity(sign_i16(widget->boids[idx].x - impulse_x) * PERIPHERAL_BOID_MAX_SPEED);
@@ -147,7 +153,7 @@ static void step_boids(struct zmk_widget_status *widget) {
             int dx = widget->boids[j].x - widget->boids[i].x;
             int dy = widget->boids[j].y - widget->boids[i].y;
 
-            if (abs_i16(dx) > 10 || abs_i16(dy) > 10) {
+            if (abs_i16(dx) > 20 || abs_i16(dy) > 20) {
                 continue;
             }
 
@@ -157,10 +163,10 @@ static void step_boids(struct zmk_widget_status *widget) {
             avg_vx += widget->boids[j].vx;
             avg_vy += widget->boids[j].vy;
 
-            if (abs_i16(dx) <= 4) {
+            if (abs_i16(dx) <= 3) {
                 separation_x -= dx;
             }
-            if (abs_i16(dy) <= 4) {
+            if (abs_i16(dy) <= 3) {
                 separation_y -= dy;
             }
         }
@@ -171,20 +177,28 @@ static void step_boids(struct zmk_widget_status *widget) {
             avg_vx /= neighbor_count;
             avg_vy /= neighbor_count;
 
-            cohesion_x = abs_i16(avg_x - widget->boids[i].x) > 6 ? sign_i16(avg_x - widget->boids[i].x) : 0;
-            cohesion_y = abs_i16(avg_y - widget->boids[i].y) > 6 ? sign_i16(avg_y - widget->boids[i].y) : 0;
-            alignment_x = sign_i16(avg_vx - widget->boids[i].vx);
-            alignment_y = sign_i16(avg_vy - widget->boids[i].vy);
-            repel_x = sign_i16(separation_x) * 2;
-            repel_y = sign_i16(separation_y) * 2;
+            cohesion_x = abs_i16(avg_x - widget->boids[i].x) > 3
+                             ? sign_i16(avg_x - widget->boids[i].x)
+                             : 0;
+            cohesion_y = abs_i16(avg_y - widget->boids[i].y) > 3
+                             ? sign_i16(avg_y - widget->boids[i].y)
+                             : 0;
+            alignment_x = avg_vx == 0 ? 0 : sign_i16(avg_vx);
+            alignment_y = avg_vy == 0 ? 0 : sign_i16(avg_vy);
+            repel_x = sign_i16(separation_x);
+            repel_y = sign_i16(separation_y);
 
             widget->boids[i].vx =
                 clamp_velocity(widget->boids[i].vx + cohesion_x + alignment_x + repel_x);
             widget->boids[i].vy =
                 clamp_velocity(widget->boids[i].vy + cohesion_y + alignment_y + repel_y);
-        } else if ((sys_rand32_get() % 3) == 0) {
-            widget->boids[i].vx = clamp_velocity(widget->boids[i].vx + random_velocity_strong());
-            widget->boids[i].vy = clamp_velocity(widget->boids[i].vy + random_velocity_strong());
+        } else {
+            widget->boids[i].vx =
+                clamp_velocity(widget->boids[i].vx +
+                               center_pull(widget->boids[i].x, PERIPHERAL_ART_WIDTH / 2, 28));
+            widget->boids[i].vy =
+                clamp_velocity(widget->boids[i].vy +
+                               center_pull(widget->boids[i].y, PERIPHERAL_ART_HEIGHT / 2, 14));
         }
 
         reset_stationary_boid(&widget->boids[i]);
@@ -263,9 +277,9 @@ static void clear_boids_bitmap(struct zmk_widget_status *widget) {
 }
 
 static void set_boid_pixel(struct zmk_widget_status *widget, int16_t x, int16_t y) {
-    size_t bit_index = (size_t)y * PERIPHERAL_ART_WIDTH + (size_t)x;
-    size_t byte_index = PERIPHERAL_ART_PALETTE_BYTES + (bit_index / 8U);
-    uint8_t mask = 1U << (7U - (bit_index % 8U));
+    size_t byte_index = PERIPHERAL_ART_PALETTE_BYTES + (size_t)y * PERIPHERAL_ART_STRIDE_BYTES +
+                        ((size_t)x / 8U);
+    uint8_t mask = 1U << (7U - ((size_t)x % 8U));
 
     widget->art_buf[byte_index] &= (uint8_t)~mask;
 }
