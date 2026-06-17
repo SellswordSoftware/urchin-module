@@ -16,6 +16,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/events/usb_conn_state_changed.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/battery_state_changed.h>
+#include <zmk/events/position_state_changed.h>
 #include <zmk/split/bluetooth/peripheral.h>
 #include <zmk/events/split_peripheral_status_changed.h>
 #include <zmk/usb.h>
@@ -68,10 +69,39 @@ static int16_t random_velocity(void) {
     return (sys_rand32_get() % 3) - 1;
 }
 
+static int16_t random_velocity_strong(void) {
+    return (sys_rand32_get() % 5) - 2;
+}
+
 static void reset_stationary_boid(struct peripheral_boid *boid) {
     if (boid->vx == 0 && boid->vy == 0) {
         boid->vx = (sys_rand32_get() & 1) ? 1 : -1;
     }
+}
+
+static void perturb_boids(struct zmk_widget_status *widget, uint32_t position) {
+    int16_t impulse_x = (position * 17U) % PERIPHERAL_ART_WIDTH;
+    int16_t impulse_y = ((position * 29U) + 11U) % PERIPHERAL_ART_HEIGHT;
+
+    for (int i = 0; i < PERIPHERAL_BOID_COUNT; i++) {
+        int16_t dx = widget->boids[i].x - impulse_x;
+        int16_t dy = widget->boids[i].y - impulse_y;
+
+        if (abs_i16(dx) <= 12 && abs_i16(dy) <= 12) {
+            widget->boids[i].vx =
+                clamp_velocity(widget->boids[i].vx + sign_i16(dx) + random_velocity());
+            widget->boids[i].vy =
+                clamp_velocity(widget->boids[i].vy + sign_i16(dy) + random_velocity());
+        }
+    }
+
+    for (int i = 0; i < 3; i++) {
+        int idx = (position + (uint32_t)(i * 7)) % PERIPHERAL_BOID_COUNT;
+        widget->boids[idx].vx = clamp_velocity(random_velocity_strong());
+        widget->boids[idx].vy = clamp_velocity(random_velocity_strong());
+    }
+
+    draw_boids(widget);
 }
 
 static void draw_boids(struct zmk_widget_status *widget) {
@@ -214,7 +244,7 @@ static bool init_boids_art(struct zmk_widget_status *widget) {
 
     init_boids(widget);
     draw_boids(widget);
-    widget->boids_timer = lv_timer_create(boids_timer_cb, 1000, widget);
+    widget->boids_timer = lv_timer_create(boids_timer_cb, 400, widget);
 
     if (widget->boids_timer == NULL) {
         LOG_ERR("Failed to create boids timer");
@@ -300,6 +330,23 @@ static void output_status_update_cb(struct peripheral_status_state state) {
 ZMK_DISPLAY_WIDGET_LISTENER(widget_peripheral_status, struct peripheral_status_state,
                             output_status_update_cb, get_state)
 ZMK_SUBSCRIPTION(widget_peripheral_status, zmk_split_peripheral_status_changed);
+
+static int boids_keypress_listener(const zmk_event_t *eh) {
+    const struct zmk_position_state_changed *ev = as_zmk_position_state_changed(eh);
+
+    if (!IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_BOIDS) || ev == NULL || !ev->state ||
+        ev->source != ZMK_POSITION_STATE_CHANGE_SOURCE_LOCAL) {
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
+    struct zmk_widget_status *widget;
+    SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) { perturb_boids(widget, ev->position); }
+
+    return ZMK_EV_EVENT_BUBBLE;
+}
+
+ZMK_LISTENER(widget_peripheral_boids_keypress, boids_keypress_listener);
+ZMK_SUBSCRIPTION(widget_peripheral_boids_keypress, zmk_position_state_changed);
 
 int zmk_widget_status_init(struct zmk_widget_status *widget, lv_obj_t *parent) {
     widget->obj = lv_obj_create(parent);
