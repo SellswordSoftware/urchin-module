@@ -35,27 +35,55 @@ static void clear_bitmap(struct zmk_widget_peripheral_fake_code *fake_code) {
            PERIPHERAL_FAKE_CODE_BITMAP_BYTES);
 }
 
+static bool get_display_pixel(int16_t x, int16_t y, int16_t *display_x, int16_t *display_y) {
+    if (x < 0 || y < 0 || x >= PERIPHERAL_FAKE_CODE_LOGICAL_WIDTH ||
+        y >= PERIPHERAL_FAKE_CODE_LOGICAL_HEIGHT) {
+        return false;
+    }
+
+    *display_x = y;
+    *display_y = PERIPHERAL_FAKE_CODE_LOGICAL_WIDTH - 1 - x;
+
+    return true;
+}
+
 static void set_pixel(struct zmk_widget_peripheral_fake_code *fake_code, int16_t x, int16_t y) {
-    if (x < 0 || y < 0 || x >= PERIPHERAL_FAKE_CODE_WIDTH || y >= PERIPHERAL_FAKE_CODE_HEIGHT) {
+    int16_t display_x;
+    int16_t display_y;
+
+    if (!get_display_pixel(x, y, &display_x, &display_y)) {
         return;
     }
 
     size_t byte_index = PERIPHERAL_FAKE_CODE_PALETTE_BYTES +
-                        (size_t)y * PERIPHERAL_FAKE_CODE_STRIDE_BYTES + ((size_t)x / 8U);
-    uint8_t mask = 1U << (7U - ((size_t)x % 8U));
+                        (size_t)display_y * PERIPHERAL_FAKE_CODE_STRIDE_BYTES +
+                        ((size_t)display_x / 8U);
+    uint8_t mask = 1U << (7U - ((size_t)display_x % 8U));
 
     fake_code->art_buf[byte_index] &= (uint8_t)~mask;
 }
 
+static void clear_pixel(struct zmk_widget_peripheral_fake_code *fake_code, int16_t x, int16_t y) {
+    int16_t display_x;
+    int16_t display_y;
+
+    if (!get_display_pixel(x, y, &display_x, &display_y)) {
+        return;
+    }
+
+    size_t byte_index = PERIPHERAL_FAKE_CODE_PALETTE_BYTES +
+                        (size_t)display_y * PERIPHERAL_FAKE_CODE_STRIDE_BYTES +
+                        ((size_t)display_x / 8U);
+    uint8_t mask = 1U << (7U - ((size_t)display_x % 8U));
+
+    fake_code->art_buf[byte_index] |= mask;
+}
+
 static void clear_rect(struct zmk_widget_peripheral_fake_code *fake_code, uint8_t x, uint8_t y,
                        uint8_t width, uint8_t height) {
-    for (uint8_t yy = y; yy < y + height && yy < PERIPHERAL_FAKE_CODE_HEIGHT; yy++) {
-        for (uint8_t xx = x; xx < x + width && xx < PERIPHERAL_FAKE_CODE_WIDTH; xx++) {
-            size_t byte_index = PERIPHERAL_FAKE_CODE_PALETTE_BYTES +
-                                (size_t)yy * PERIPHERAL_FAKE_CODE_STRIDE_BYTES + (xx / 8U);
-            uint8_t mask = 1U << (7U - (xx % 8U));
-
-            fake_code->art_buf[byte_index] |= mask;
+    for (uint8_t yy = y; yy < y + height && yy < PERIPHERAL_FAKE_CODE_LOGICAL_HEIGHT; yy++) {
+        for (uint8_t xx = x; xx < x + width && xx < PERIPHERAL_FAKE_CODE_LOGICAL_WIDTH; xx++) {
+            clear_pixel(fake_code, xx, yy);
         }
     }
 }
@@ -75,28 +103,23 @@ static void draw_vline(struct zmk_widget_peripheral_fake_code *fake_code, uint8_
 }
 
 static void scroll_up(struct zmk_widget_peripheral_fake_code *fake_code) {
-    uint8_t *bitmap = fake_code->art_buf + PERIPHERAL_FAKE_CODE_PALETTE_BYTES;
-    size_t line_bytes = FAKE_CODE_LINE_HEIGHT * PERIPHERAL_FAKE_CODE_STRIDE_BYTES;
-    size_t remaining = PERIPHERAL_FAKE_CODE_BITMAP_BYTES - line_bytes;
-
-    memmove(bitmap, bitmap + line_bytes, remaining);
-    memset(bitmap + remaining, 0xff, line_bytes);
+    clear_bitmap(fake_code);
+    fake_code->cursor_y = 0;
 }
 
 static void newline(struct zmk_widget_peripheral_fake_code *fake_code) {
     fake_code->cursor_y += FAKE_CODE_LINE_HEIGHT;
-    if (fake_code->cursor_y + FAKE_CODE_LINE_HEIGHT > PERIPHERAL_FAKE_CODE_HEIGHT) {
+    if (fake_code->cursor_y + FAKE_CODE_LINE_HEIGHT > PERIPHERAL_FAKE_CODE_LOGICAL_HEIGHT) {
         scroll_up(fake_code);
-        fake_code->cursor_y = PERIPHERAL_FAKE_CODE_HEIGHT - FAKE_CODE_LINE_HEIGHT;
     }
 
     fake_code->cursor_x = fake_code->indent * FAKE_CODE_INDENT_WIDTH;
     clear_rect(fake_code, fake_code->cursor_x, fake_code->cursor_y,
-               PERIPHERAL_FAKE_CODE_WIDTH - fake_code->cursor_x, FAKE_CODE_LINE_HEIGHT);
+               PERIPHERAL_FAKE_CODE_LOGICAL_WIDTH - fake_code->cursor_x, FAKE_CODE_LINE_HEIGHT);
 }
 
 static void ensure_room(struct zmk_widget_peripheral_fake_code *fake_code, uint8_t width) {
-    if (fake_code->cursor_x + width >= PERIPHERAL_FAKE_CODE_WIDTH) {
+    if (fake_code->cursor_x + width >= PERIPHERAL_FAKE_CODE_LOGICAL_WIDTH) {
         newline(fake_code);
     }
 }
