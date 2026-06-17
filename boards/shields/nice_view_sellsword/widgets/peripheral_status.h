@@ -16,6 +16,9 @@
 #if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_BOIDS)
 #include "peripheral_boids.h"
 #endif
+#if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_GRAPH)
+#include "peripheral_graph.h"
+#endif
 
 struct zmk_widget_status {
     sys_snode_t node;
@@ -26,6 +29,9 @@ struct zmk_widget_status {
 #endif
 #if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_BOIDS)
     struct zmk_widget_peripheral_boids boids;
+#endif
+#if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_GRAPH)
+    struct zmk_widget_peripheral_graph graph;
 #endif
     struct status_state state;
 };

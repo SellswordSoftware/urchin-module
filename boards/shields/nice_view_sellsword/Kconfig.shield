@@ -14,4 +14,8 @@ config NICE_VIEW_WIDGET_PERIPHERAL_FAKE_CODE
     bool "Use fake code typer instead of static peripheral art"
     default n
 
+config NICE_VIEW_WIDGET_PERIPHERAL_GRAPH
+    bool "Use harmonograph plotter instead of static peripheral art"
+    default n
+
 endif

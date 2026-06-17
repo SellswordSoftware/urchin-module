@@ -28,6 +28,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_BOIDS)
 #include "peripheral_boids.h"
 #endif
+#if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_GRAPH)
+#include "peripheral_graph.h"
+#endif
 
 LV_IMG_DECLARE(balloon);
 LV_IMG_DECLARE(mountain);
@@ -135,6 +138,10 @@ int zmk_widget_status_init(struct zmk_widget_status *widget, lv_obj_t *parent) {
 
 #if IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_FAKE_CODE)
     if (!zmk_widget_peripheral_fake_code_init(&widget->fake_code, widget->obj)) {
+        init_static_art(widget);
+    }
+#elif IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_GRAPH)
+    if (!zmk_widget_peripheral_graph_init(&widget->graph, widget->obj)) {
         init_static_art(widget);
     }
 #elif IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_PERIPHERAL_BOIDS)
