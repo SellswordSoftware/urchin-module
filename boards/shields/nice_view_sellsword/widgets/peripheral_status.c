@@ -149,7 +149,7 @@ static void step_boids(struct zmk_widget_status *widget) {
 }
 
 static void boids_timer_cb(lv_timer_t *timer) {
-    struct zmk_widget_status *widget = lv_timer_get_user_data(timer);
+    struct zmk_widget_status *widget = timer->user_data;
 
     if (widget == NULL) {
         return;
